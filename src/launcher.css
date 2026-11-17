@@ -1,0 +1,313 @@
+.pl-container {
+	min-height: 100%;
+	background: var(--dsw-alias-surface-page, #f8fafc);
+	color: var(--dsw-alias-text-primary, #1e293b);
+	font-size: 13px;
+	line-height: 1.55;
+	padding: 20px 24px 32px;
+	box-sizing: border-box;
+}
+
+.pl-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.pl-title {
+	font-size: 15px;
+	font-weight: 600;
+	letter-spacing: 0.2px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.pl-subtitle {
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	font-size: 12px;
+	margin-top: 2px;
+}
+
+.pl-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.pl-hint {
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	font-size: 12px;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	border-radius: 8px;
+	padding: 10px 12px;
+	margin-bottom: 16px;
+	background: var(--dsw-alias-surface-overlay, #ffffff);
+}
+
+.pl-card-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.pl-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 14px;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	border-radius: 10px;
+	padding: 12px 14px;
+	background: var(--dsw-alias-surface-overlay, #ffffff);
+	transition: border-color 0.15s ease;
+}
+
+.pl-card:hover {
+	border-color: var(--dsw-alias-border-strong, #cbd5e1);
+}
+
+.pl-card-main {
+	display: flex;
+	flex-direction: column;
+	gap: 3px;
+	min-width: 0;
+}
+
+.pl-card-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.pl-card-name {
+	font-weight: 600;
+	font-size: 13.5px;
+}
+
+.pl-card-path {
+	font-family: var(--dsw-alias-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+	font-size: 11.5px;
+	color: var(--dsw-alias-text-secondary, #64748b);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.pl-card-bundles {
+	font-size: 11.5px;
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+}
+
+.pl-badges {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-shrink: 0;
+}
+
+.pl-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	font-size: 11px;
+	border-radius: 999px;
+	padding: 3px 9px;
+	border: 1px solid transparent;
+	white-space: nowrap;
+}
+
+.pl-badge-running {
+	color: #15803d;
+	background: rgba(34, 197, 94, 0.12);
+	border-color: rgba(34, 197, 94, 0.35);
+}
+
+.pl-badge-current {
+	color: #1d4ed8;
+	background: rgba(59, 130, 246, 0.12);
+	border-color: rgba(59, 130, 246, 0.35);
+}
+
+.pl-badge-stopped {
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	background: var(--dsw-alias-surface-sunken, #f1f5f9);
+	border-color: var(--dsw-alias-border-subtle, #e2e8f0);
+}
+
+.pl-badge-unknown {
+	color: #92400e;
+	background: rgba(245, 158, 11, 0.12);
+	border-color: rgba(245, 158, 11, 0.35);
+}
+
+.pl-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.pl-dot-pulse {
+	animation: pl-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes pl-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.35; }
+}
+
+.pl-launch-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 500;
+	border-radius: 8px;
+	padding: 6px 14px;
+	cursor: pointer;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	background: var(--dsw-alias-surface-overlay, #ffffff);
+	color: var(--dsw-alias-text-primary, #1e293b);
+	transition: all 0.15s ease;
+	flex-shrink: 0;
+}
+
+.pl-launch-btn:hover:not(:disabled) {
+	border-color: var(--dsw-alias-border-strong, #cbd5e1);
+}
+
+.pl-launch-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.pl-empty {
+	text-align: center;
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	padding: 40px 0;
+}
+
+.pl-error {
+	border: 1px solid rgba(239, 68, 68, 0.4);
+	background: rgba(239, 68, 68, 0.08);
+	color: #b91c1c;
+	border-radius: 8px;
+	padding: 10px 12px;
+	margin-bottom: 14px;
+	font-size: 12px;
+	word-break: break-all;
+}
+
+.pl-loading {
+	text-align: center;
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	padding: 40px 0;
+}
+
+/* —— pl-CHG-002：新建表单 / 危险操作 / 待初始化徽标 —— */
+
+.pl-form {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	border-radius: 10px;
+	padding: 10px 12px;
+	margin-bottom: 12px;
+	background: var(--dsw-alias-surface-overlay, #ffffff);
+}
+
+.pl-input {
+	flex: 1 1 200px;
+	min-width: 0;
+	font-size: 12.5px;
+	border-radius: 8px;
+	padding: 7px 10px;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	background: var(--dsw-alias-surface-page, #f8fafc);
+	color: var(--dsw-alias-text-primary, #1e293b);
+	outline: none;
+	transition: border-color 0.15s ease;
+}
+
+.pl-input:focus {
+	border-color: var(--dsw-alias-border-strong, #cbd5e1);
+}
+
+/* 继承配置下拉（pl-CHG-003）：对齐 pl-input 外观，固定合理宽度不与名称输入抢弹性行 */
+.pl-select {
+	flex: 0 0 auto;
+	min-width: 180px;
+	appearance: auto;
+	cursor: pointer;
+}
+
+.pl-form-note {
+	font-size: 11px;
+	color: var(--dsw-alias-text-tertiary, #94a3b8);
+	white-space: nowrap;
+}
+
+.pl-link-btn {
+	font-size: 12px;
+	color: var(--dsw-alias-text-secondary, #64748b);
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 6px 8px;
+}
+
+.pl-link-btn:hover {
+	text-decoration: underline;
+}
+
+.pl-danger-btn {
+	display: inline-flex;
+	align-items: center;
+	font-size: 12px;
+	font-weight: 500;
+	border-radius: 8px;
+	padding: 6px 14px;
+	cursor: pointer;
+	border: 1px solid var(--dsw-alias-border-subtle, #e2e8f0);
+	background: var(--dsw-alias-surface-overlay, #ffffff);
+	color: var(--dsw-alias-text-secondary, #64748b);
+	transition: all 0.15s ease;
+	flex-shrink: 0;
+}
+
+.pl-danger-btn:hover:not(:disabled) {
+	color: #b91c1c;
+	border-color: rgba(239, 68, 68, 0.45);
+}
+
+/* 内嵌二次确认态（无 RiskConfirmation 时的降级路径）：红色实感强调 */
+.pl-danger-confirm {
+	color: #ffffff;
+	background: #dc2626;
+	border-color: #dc2626;
+}
+
+.pl-danger-confirm:hover:not(:disabled) {
+	color: #ffffff;
+	background: #b91c1c;
+	border-color: #b91c1c;
+}
+
+.pl-danger-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.pl-badge-pending {
+	color: #92400e;
+	background: rgba(245, 158, 11, 0.1);
+	border-color: rgba(245, 158, 11, 0.3);
+	font-size: 10.5px;
+	padding: 2px 8px;
+}

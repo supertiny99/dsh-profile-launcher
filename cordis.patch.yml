@@ -1,0 +1,4 @@
+# @supertiny99/dsh-profile-launcher bundle patch
+- insert:
+    - id: profile-launcher
+      name: '@supertiny99/dsh-profile-launcher'
