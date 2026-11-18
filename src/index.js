@@ -8,9 +8,10 @@
 //   POST /stop      定位主进程 SIGTERM 优雅退出（pl-CHG-002；实证 1s 全树清零）
 //   POST /delete    状态防护后真删 home 整目录（pl-CHG-002；运行中/当前实例/未知态拒绝）
 import { spawn, execFile } from 'node:child_process';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
 	discoverProfileHomes,
@@ -22,11 +23,68 @@ import {
 	validateProfileName,
 	findInstanceMainPids,
 	planConfigInherit,
+	planBadgeInject,
+	planBadgeRemove,
+	resolvePnpmEntry,
 } from './launcher-core.js';
 
 const APP_FALLBACK = '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness';
 /** app 二进制探测候选：宿主进程自省优先（随 app 更新/改名稳定），硬编码兜底 */
 const appPathCandidates = () => [process.argv[0], process.execPath, APP_FALLBACK];
+
+/**
+ * 内嵌 badge 包目录（pl-CHG-005）：<包根>/dist/badge。src/index.js 运行于包内，
+ * 包根即 src 的上级；link 态 dev 与 npm 安装态布局一致。
+ */
+const badgeDistDir = () => resolve(dirname(fileURLToPath(import.meta.url)), '../dist/badge');
+
+/**
+ * pnpm install 执行器（pl-CHG-005；plugin-guardian pg-CHG-001~004 实证参数）：
+ * runtime pnpm.mjs 优先（host argv 携带路径，锁 process.execPath 免环境漂移），
+ * 兜底系统 pnpm；verify-deps-before-run 关闭防宿主内嵌校验卡死。
+ * @param {string} cwd 目标 profile 工作区目录
+ * @returns {Promise<{ ok: boolean, log: string }>}
+ */
+function pnpmInstall(cwd) {
+	const args = ['install', '--config.verify-deps-before-run=false'];
+	const pnpmEntry = resolvePnpmEntry(process.argv, existsSync);
+	const useNodeScript = Boolean(pnpmEntry);
+	const cmd = useNodeScript ? process.execPath : 'pnpm';
+	if (useNodeScript) args.unshift(pnpmEntry);
+	return new Promise((resolvePromise) => {
+		execFile(
+			cmd,
+			args,
+			{
+				cwd,
+				timeout: 120_000,
+				env: {
+					...process.env,
+					npm_config_verify_deps_before_run: 'false',
+					PATH: `${dirname(process.execPath)}:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin:${process.env.PATH || ''}`,
+				},
+			},
+			(err, stdout, stderr) => {
+				const log = `${stdout || ''}\n${stderr || ''}`.trim();
+				resolvePromise({ ok: !err, log: log.slice(-2000) });
+			}
+		);
+	});
+}
+
+/**
+ * 读取目标 profile 的 package.json 原文（注入/移除前置）。
+ * @returns {Promise<{ raw: object, path: string } | { error: string }>}
+ */
+async function readProfilePackage(home) {
+	const pkgPath = join(home.profilePath, 'package.json');
+	try {
+		const raw = JSON.parse(readFileSync(pkgPath, 'utf8'));
+		return { raw, path: pkgPath };
+	} catch (err) {
+		return { error: `profiles/desktop/package.json 不可读：${err instanceof Error ? err.message : String(err)}` };
+	}
+}
 
 /** 适配层：把 node fs 包成 launcher-core 注入接口 */
 const fsIo = {
@@ -326,6 +384,75 @@ export function apply(ctx) {
 						}
 						rmSync(resolved, { recursive: true, force: true });
 						sendJson(res, 200, { deleted: true, homePath: resolved });
+						return;
+					}
+					// 实例标识注入（pl-CHG-005）：写目标 profile 双字段 + pnpm install。
+					// 幂等（重复注入语义等价）；运行中允许注入（宿主 boot 时才装载，不产生分裂态，
+					// 但须重启实例生效——面板给出重启引导）。
+					if (req.method === 'POST' && pathname === '/profile-launcher/inject-badge') {
+						const body = await parseBody(req);
+						const state = await collectProfileState();
+						const target = state.homes.find((h) => h.homePath === body?.homePath);
+						if (!target) {
+							sendJson(res, 400, { error: `未发现的 profile home：${body?.homePath}` });
+							return;
+						}
+						if (!target.initialized) {
+							sendJson(res, 409, { error: '该 profile 尚未初始化（先启动一次由宿主完成初始化，再注入标识）' });
+							return;
+						}
+						const badgeDir = badgeDistDir();
+						if (!existsSync(join(badgeDir, 'package.json'))) {
+							sendJson(res, 500, { error: `内嵌 badge 包缺失（${badgeDir}）——请先完成构建` });
+							return;
+						}
+						const read = await readProfilePackage(target);
+						if (read.error) {
+							sendJson(res, 500, { error: read.error });
+							return;
+						}
+						let nextPkg;
+						try {
+							nextPkg = planBadgeInject(read.raw, `file:${badgeDir}`);
+						} catch (err) {
+							sendJson(res, 409, { error: err instanceof Error ? err.message : String(err) });
+							return;
+						}
+						writeFileSync(read.path, `${JSON.stringify(nextPkg, null, 2)}\n`);
+						const install = await pnpmInstall(target.profilePath);
+						if (!install.ok) {
+							sendJson(res, 500, { error: `pnpm install 失败：${install.log}` });
+							return;
+						}
+						sendJson(res, 200, { injected: true, restartRequired: true, homePath: target.homePath });
+						return;
+					}
+					// 实例标识移除（pl-CHG-005）：双字段删除 + pnpm install，幂等。
+					if (req.method === 'POST' && pathname === '/profile-launcher/remove-badge') {
+						const body = await parseBody(req);
+						const state = await collectProfileState();
+						const target = state.homes.find((h) => h.homePath === body?.homePath);
+						if (!target) {
+							sendJson(res, 400, { error: `未发现的 profile home：${body?.homePath}` });
+							return;
+						}
+						const read = await readProfilePackage(target);
+						if (read.error) {
+							sendJson(res, 500, { error: read.error });
+							return;
+						}
+						const plan = planBadgeRemove(read.raw);
+						if (!plan.changed) {
+							sendJson(res, 200, { removed: false, message: '该 profile 未注入标识' });
+							return;
+						}
+						writeFileSync(read.path, `${JSON.stringify(plan.pkg, null, 2)}\n`);
+						const install = await pnpmInstall(target.profilePath);
+						if (!install.ok) {
+							sendJson(res, 500, { error: `pnpm install 失败：${install.log}` });
+							return;
+						}
+						sendJson(res, 200, { removed: true, restartRequired: true, homePath: target.homePath });
 						return;
 					}
 					sendJson(res, 404, { error: 'not found' });

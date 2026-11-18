@@ -13,6 +13,11 @@ import {
 	validateProfileName,
 	findInstanceMainPids,
 	planConfigInherit,
+	isBadgeInjected,
+	planBadgeInject,
+	planBadgeRemove,
+	resolvePnpmEntry,
+	BADGE_PACKAGE_NAME,
 } from '../src/launcher-core.js';
 
 const HOME = '/Users/tester';
@@ -221,6 +226,116 @@ check('planConfigInherit：来源缺失的文件跳过不算失败（AC5）', as
 	const plans = await planConfigInherit(io, join(HOME, '.dsh-dev'), join(HOME, '.dsh-new'));
 	assert.equal(plans.length, 1);
 	assert.equal(plans[0].file, 'settings.yaml');
+});
+
+// ===== 实例标识（pl-CHG-005）=====
+
+const hostPkg = () => ({
+	name: 'dsh-profile-desktop',
+	private: true,
+	dependencies: {
+		'@deepseek-ai/dsh-base': '^0.2.0',
+	},
+	dsh: {
+		profile: {
+			bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'],
+		},
+	},
+});
+
+check('isBadgeInjected：双字段齐备才算完整注入', () => {
+	const withBadge = planBadgeInject(hostPkg(), 'file:/x/dist/badge');
+	assert.equal(isBadgeInjected(withBadge), true);
+	assert.equal(isBadgeInjected(hostPkg()), false);
+});
+
+check('isBadgeInjected：只有 bundles 没有 dependencies 不算（写入中断防御）', () => {
+	const pkg = hostPkg();
+	pkg.dsh.profile.bundles.push(BADGE_PACKAGE_NAME);
+	assert.equal(isBadgeInjected(pkg), false);
+});
+
+check('isBadgeInjected：null / 缺结构安全返回 false', () => {
+	assert.equal(isBadgeInjected(null), false);
+	assert.equal(isBadgeInjected({}), false);
+	assert.equal(isBadgeInjected({ dsh: { profile: { bundles: [BADGE_PACKAGE_NAME] } } }), false);
+});
+
+check('planBadgeInject：追加 bundles + dependencies，不重复、不改原有键', () => {
+	const next = planBadgeInject(hostPkg(), 'file:/x/dist/badge');
+	assert.deepEqual(next.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', BADGE_PACKAGE_NAME]);
+	assert.equal(next.dependencies[BADGE_PACKAGE_NAME], 'file:/x/dist/badge');
+	assert.equal(next.dependencies['@deepseek-ai/dsh-base'], '^0.2.0');
+	assert.equal(next.name, 'dsh-profile-desktop');
+});
+
+check('planBadgeInject：幂等（重复注入产出语义等价对象，spec 刷新）', () => {
+	const once = planBadgeInject(hostPkg(), 'file:/old/dist/badge');
+	const twice = planBadgeInject(once, 'file:/new/dist/badge');
+	assert.equal(twice.dsh.profile.bundles.filter((b) => b === BADGE_PACKAGE_NAME).length, 1);
+	assert.equal(twice.dependencies[BADGE_PACKAGE_NAME], 'file:/new/dist/badge');
+});
+
+check('planBadgeInject：缺 bundles / dependencies 结构直接抛错（非宿主初始化形态）', () => {
+	assert.throws(() => planBadgeInject({ dependencies: {} }, 'file:/x'), /dsh\.profile\.bundles/);
+	assert.throws(() => planBadgeInject({ dsh: { profile: { bundles: [] } } }, 'file:/x'), /dependencies/);
+	assert.throws(() => planBadgeInject(null, 'file:/x'), /不可解析/);
+});
+
+check('planBadgeInject：不污染输入对象（深拷贝）', () => {
+	const pkg = hostPkg();
+	planBadgeInject(pkg, 'file:/x/dist/badge');
+	assert.equal(pkg.dsh.profile.bundles.length, 2);
+	assert.equal(BADGE_PACKAGE_NAME in pkg.dependencies, false);
+});
+
+check('planBadgeRemove：双字段删除且 changed=true', () => {
+	const injected = planBadgeInject(hostPkg(), 'file:/x/dist/badge');
+	const plan = planBadgeRemove(injected);
+	assert.equal(plan.changed, true);
+	assert.deepEqual(plan.pkg.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app']);
+	assert.equal(BADGE_PACKAGE_NAME in plan.pkg.dependencies, false);
+});
+
+check('planBadgeRemove：未注入时幂等返回 changed=false（移除重试安全）', () => {
+	const plan = planBadgeRemove(hostPkg());
+	assert.equal(plan.changed, false);
+	const planNull = planBadgeRemove(null);
+	assert.equal(planNull.changed, false);
+});
+
+check('planBadgeRemove：只回滚 badge，不碰其他依赖与 bundles', () => {
+	const pkg = planBadgeInject(hostPkg(), 'file:/x/dist/badge');
+	pkg.dependencies['@local/dsh-blog-stats'] = 'link:/x';
+	pkg.dsh.profile.bundles.push('@local/dsh-blog-stats');
+	const plan = planBadgeRemove(pkg);
+	assert.deepEqual(plan.pkg.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@local/dsh-blog-stats']);
+	assert.equal(plan.pkg.dependencies['@local/dsh-blog-stats'], 'link:/x');
+});
+
+check('resolvePnpmEntry：argv 中首个存在命中的 pnpm.mjs 胜出', () => {
+	const pnpmA = '/runtime/a/pnpm/bin/pnpm.mjs';
+	const files = { [pnpmA]: true };
+	assert.equal(resolvePnpmEntry(['--type=gpu', pnpmA, '/b/pnpm/bin/pnpm.mjs'], (p) => files[p] === true), pnpmA);
+});
+
+check('resolvePnpmEntry：无命中 / 非 pnpm.mjs 后缀返回 null（兜底系统 pnpm）', () => {
+	assert.equal(resolvePnpmEntry(['/x/y.mjs', '--mode'], () => true), null);
+	assert.equal(resolvePnpmEntry(['/x/pnpm/bin/pnpm.mjs'], () => false), null);
+	assert.equal(resolvePnpmEntry([], () => true), null);
+});
+
+check('parseProfileMeta：badgeInjected 随 manifest 解析输出', async () => {
+	const injectedPkg = planBadgeInject(hostPkg(), 'file:/x/dist/badge');
+	const meta = await parseProfileMeta({ readJson: async () => injectedPkg }, '/x');
+	assert.equal(meta.badgeInjected, true);
+	const plainMeta = await parseProfileMeta({ readJson: async () => hostPkg() }, '/x');
+	assert.equal(plainMeta.badgeInjected, false);
+});
+
+check('homeDisplayName：.dsh → default / .dsh-x → x（与注入命名口径一致）', () => {
+	assert.equal(homeDisplayName('.dsh'), 'default');
+	assert.equal(homeDisplayName('.dsh-dev'), 'dev');
 });
 
 check('planConfigInherit：来源全空（stat 全 null）返回空清单（待初始化 home 场景）', async () => {

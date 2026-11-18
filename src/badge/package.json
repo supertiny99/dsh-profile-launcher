@@ -1,0 +1,34 @@
+{
+	"name": "@supertiny99/dsh-profile-badge",
+	"version": "0.1.0",
+	"description": "DeepSeek Harness (DSH) profile 实例标识浮标：在实例 UI 右下角显示所属 profile 名称（随 dsh-profile-launcher 内嵌分发，由启动器注入各 profile）。",
+	"type": "module",
+	"main": "index.js",
+	"exports": {
+		".": "./index.js",
+		"./client": "./client.js",
+		"./cordis.patch.yml": "./cordis.patch.yml",
+		"./package.json": "./package.json"
+	},
+	"author": "supertiny99",
+	"license": "MIT",
+	"dsh": {
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		},
+		"client": {
+			"platform": "web",
+			"immediately": true
+		}
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"keywords": [
+		"dsh",
+		"deepseek-harness",
+		"dsh-plugin",
+		"profile",
+		"badge"
+	]
+}

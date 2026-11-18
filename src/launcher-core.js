@@ -47,7 +47,13 @@ export async function parseProfileMeta(io, profilePath) {
 		? pkg.dsh.profile.bundles.filter((b) => typeof b === 'string')
 		: [];
 	const dependencyNames = pkg.dependencies && typeof pkg.dependencies === 'object' ? Object.keys(pkg.dependencies) : [];
-	return { bundles, bundleCount: bundles.length, dependencyCount: dependencyNames.length };
+	return {
+		bundles,
+		bundleCount: bundles.length,
+		dependencyCount: dependencyNames.length,
+		// 实例标识状态（pl-CHG-005）：完整注入 = bundles+dependencies 双字段齐备
+		badgeInjected: isBadgeInjected(pkg),
+	};
 }
 
 /**
@@ -190,4 +196,82 @@ export async function planConfigInherit(io, sourceHomePath, destHomePath) {
 		});
 	}
 	return plans;
+}
+
+/**
+ * 实例标识（pl-CHG-005）：companion 徽章插件包名。随 launcher dist/badge 内嵌分发，
+ * 注入目标 profile 后由 badge 自己解析所属 home 并渲染浮标。
+ */
+export const BADGE_PACKAGE_NAME = '@supertiny99/dsh-profile-badge';
+
+/**
+ * 判断目标 profile 是否已注入 badge（bundles 与 dependencies 双字段同时含 badge 才算完整）。
+ * @param {object|null} pkg profiles/desktop/package.json 解析对象
+ * @returns {boolean}
+ */
+export function isBadgeInjected(pkg, badgeName = BADGE_PACKAGE_NAME) {
+	if (!pkg || typeof pkg !== 'object') return false;
+	const bundles = pkg?.dsh?.profile?.bundles;
+	if (!Array.isArray(bundles) || !bundles.includes(badgeName)) return false;
+	const deps = pkg?.dependencies;
+	return typeof deps === 'object' && deps !== null && typeof deps[badgeName] === 'string';
+}
+
+/**
+ * 规划 badge 注入后的 package.json（纯函数，不改文件；调用方负责读/写与 pnpm install）。
+ * 幂等：重复注入产出语义等价对象。结构缺失（宿主未初始化形态）直接抛错——注入前置条件
+ * 是 profile 已初始化，调用方须先校验 initialized。
+ * @param {object} pkg 现有 package.json 解析对象
+ * @param {string} badgeSpec badge 依赖 spec（`file:<launcher 内嵌目录绝对路径>`）
+ * @param {string} [badgeName]
+ * @returns {object} 更新后的 package.json 对象（深拷贝，键序保持）
+ */
+export function planBadgeInject(pkg, badgeSpec, badgeName = BADGE_PACKAGE_NAME) {
+	if (!pkg || typeof pkg !== 'object') throw new Error('profiles/desktop/package.json 不存在或不可解析（profile 未初始化）');
+	if (!pkg.dsh || typeof pkg.dsh !== 'object' || !pkg.dsh.profile || typeof pkg.dsh.profile !== 'object'
+		|| !Array.isArray(pkg.dsh.profile.bundles)) {
+		throw new Error('package.json 缺少 dsh.profile.bundles 结构（非宿主初始化形态），拒绝注入');
+	}
+	if (!pkg.dependencies || typeof pkg.dependencies !== 'object') {
+		throw new Error('package.json 缺少 dependencies 结构（非宿主初始化形态），拒绝注入');
+	}
+	const next = structuredClone(pkg);
+	if (!next.dsh.profile.bundles.includes(badgeName)) next.dsh.profile.bundles.push(badgeName);
+	next.dependencies[badgeName] = badgeSpec;
+	return next;
+}
+
+/**
+ * 规划 badge 移除后的 package.json（纯函数）。幂等：未注入时返回原对象拷贝（changed=false）。
+ * @param {object} pkg 现有 package.json 解析对象
+ * @param {string} [badgeName]
+ * @returns {{ pkg: object, changed: boolean }}
+ */
+export function planBadgeRemove(pkg, badgeName = BADGE_PACKAGE_NAME) {
+	const next = structuredClone(pkg ?? {});
+	let changed = false;
+	if (next?.dsh?.profile?.bundles && Array.isArray(next.dsh.profile.bundles)) {
+		const filtered = next.dsh.profile.bundles.filter((b) => b !== badgeName);
+		if (filtered.length !== next.dsh.profile.bundles.length) changed = true;
+		next.dsh.profile.bundles = filtered;
+	}
+	if (next?.dependencies && typeof next.dependencies === 'object' && badgeName in next.dependencies) {
+		delete next.dependencies[badgeName];
+		changed = true;
+	}
+	return { pkg: next, changed };
+}
+
+/**
+ * 从宿主进程 argv 提取 runtime pnpm 入口（host 由 desktop 主进程 spawn，argv 携带
+ * `.../primary-runtime/dependencies/pnpm/bin/pnpm.mjs` 绝对路径）。首个存在命中者胜出。
+ * @param {string[]} argv 宿主进程 argv
+ * @param {(p: string) => boolean} existsFn
+ * @returns {string|null} pnpm.mjs 绝对路径或 null（调用方兜底系统 pnpm）
+ */
+export function resolvePnpmEntry(argv, existsFn) {
+	for (const a of argv || []) {
+		if (typeof a === 'string' && a.endsWith('pnpm/bin/pnpm.mjs') && existsFn(a)) return a;
+	}
+	return null;
 }

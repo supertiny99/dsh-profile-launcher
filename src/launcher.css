@@ -311,3 +311,34 @@
 	font-size: 10.5px;
 	padding: 2px 8px;
 }
+
+/* 实例标识（pl-CHG-005）：卡片「已标识」徽标 + 注入/移除小按钮 */
+.pl-badge-marked {
+	color: #92400e;
+	background: rgba(245, 158, 11, 0.12);
+	border-color: rgba(245, 158, 11, 0.35);
+}
+
+.pl-badge-btn {
+	display: inline-flex;
+	align-items: center;
+	font-size: 12px;
+	font-weight: 500;
+	border-radius: 8px;
+	padding: 6px 10px;
+	cursor: pointer;
+	color: var(--dsw-alias-text-secondary, #475569);
+	background: transparent;
+	border: 1px solid var(--dsw-alias-border, #e2e8f0);
+	white-space: nowrap;
+}
+
+.pl-badge-btn:hover:not(:disabled) {
+	border-color: var(--dsw-alias-border-strong, #cbd5e1);
+	color: var(--dsw-alias-text-primary, #0f172a);
+}
+
+.pl-badge-btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}

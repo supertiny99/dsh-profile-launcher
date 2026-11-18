@@ -1,6 +1,6 @@
 {
 	"name": "@supertiny99/dsh-profile-launcher",
-	"version": "0.3.0",
+	"version": "0.4.0",
 	"description": "DeepSeek Harness (DSH) 多 Profile 桌面版一键启动器：在桌面端内发现全部 profile 环境、识别运行状态与当前实例，并以独立 user-data 目录绕开单实例锁实现不同 profile 桌面版双开并存；新建 profile 可选从既有 profile 继承模型相关配置（settings.yaml / .credentials.yaml / .env）。",
 	"type": "module",
 	"main": "src/index.js",
@@ -55,6 +55,7 @@
 	"files": [
 		"src",
 		"dist/client.js",
+		"dist/badge",
 		"cordis.patch.yml",
 		"README.md",
 		"LICENSE"

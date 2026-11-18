@@ -75,6 +75,27 @@ if (exports && !Array.isArray(exports.inject)) {
 	failures.push('缺少 inject 声明（应包含 slots）');
 }
 
+// badge 内嵌包产物校验（pl-CHG-005）：注册链 + exports 契约
+try {
+	const badgeSource = await readFile('dist/badge/client.js', 'utf8');
+	let badgeRegistered = null;
+	const badgeWindow = { __ModuleLoader__: { load: (entry) => { badgeRegistered = entry; } } };
+	new Function('window', 'require', `"use strict";\n${badgeSource}`)(badgeWindow, fakeRequire);
+	if (!badgeRegistered || badgeRegistered.id !== '@supertiny99/dsh-profile-badge') {
+		failures.push('badge 产物未以 @supertiny99/dsh-profile-badge 注册 __ModuleLoader__.load');
+	} else {
+		const badgeExports = badgeRegistered.factory(fakeRequire);
+		if (!badgeExports || typeof badgeExports.apply !== 'function') {
+			failures.push('badge factory 未返回 { apply }');
+		}
+		if (badgeExports && !Array.isArray(badgeExports.inject)) {
+			failures.push('badge 缺少 inject 数组声明');
+		}
+	}
+} catch (e) {
+	failures.push(`badge 产物校验失败（dist/badge/client.js 缺失或损坏）: ${e.message}`);
+}
+
 if (failures.length) {
 	console.error('selfcheck FAIL:\n  ' + failures.join('\n  '));
 	process.exit(1);

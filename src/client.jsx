@@ -151,7 +151,7 @@ function DeleteButton({ home, busy, immediate, onClick }) {
 	);
 }
 
-function HomeCard({ home, launching, stopping, deleting, onLaunch, onStop, onDelete }) {
+function HomeCard({ home, launching, stopping, deleting, badging, onLaunch, onStop, onDelete, onInjectBadge, onRemoveBadge }) {
 	const metaLine =
 		home.bundleCount != null
 			? `${home.bundleCount} 个插件激活 · ${home.dependencyCount ?? 0} 个已安装`
@@ -161,6 +161,11 @@ function HomeCard({ home, launching, stopping, deleting, onLaunch, onStop, onDel
 			<div className="pl-card-main">
 				<div className="pl-card-title-row">
 					<span className="pl-card-name">{home.displayName}</span>
+					{home.badgeInjected === true && (
+						<span className="pl-badge pl-badge-marked" title="已注入实例标识浮标：该 profile 桌面版窗口右下角显示本 profile 名称（重启后生效）">
+							已标识
+						</span>
+					)}
 					{home.initialized === false && (
 						<span className="pl-badge pl-badge-pending" title="尚无 profiles/desktop/package.json——首次启动时由宿主自动完成初始化（空 profile 实证，无需预置任何文件）">
 							待初始化
@@ -176,6 +181,28 @@ function HomeCard({ home, launching, stopping, deleting, onLaunch, onStop, onDel
 				<StatusBadge home={home} />
 				<LaunchButton home={home} launching={launching} onLaunch={onLaunch} />
 				<StopButton home={home} busy={stopping} onStop={onStop} />
+				{home.initialized !== false && home.badgeInjected !== true && (
+					<button
+						type="button"
+						className="pl-badge-btn"
+						disabled={badging}
+						title="注入实例标识浮标（窗口右下角显示 profile 名称，重启实例后生效）"
+						onClick={onInjectBadge}
+					>
+						{badging ? '注入中…' : '注入标识'}
+					</button>
+				)}
+				{home.badgeInjected === true && (
+					<button
+						type="button"
+						className="pl-badge-btn"
+						disabled={badging}
+						title="移除实例标识浮标（重启实例后恢复原状）"
+						onClick={onRemoveBadge}
+					>
+						{badging ? '移除中…' : '移除标识'}
+					</button>
+				)}
 				<DeleteButton home={home} busy={deleting} immediate={Boolean(RiskConfirm)} onClick={onDelete} />
 			</div>
 		</div>
@@ -189,6 +216,7 @@ function LauncherPanel() {
 	const [launchingHome, setLaunchingHome] = useState(null);
 	const [stoppingHome, setStoppingHome] = useState(null);
 	const [deletingHome, setDeletingHome] = useState(null);
+	const [badgingHome, setBadgingHome] = useState(null);
 	const [toast, setToast] = useState(null);
 	// 新建表单（header 内联展开）
 	const [creating, setCreating] = useState(false);
@@ -217,19 +245,33 @@ function LauncherPanel() {
 		refresh();
 	}, [refresh]);
 
+	// 低层请求（pl-CHG-005 抽取）：launch/stop 供单步操作与新建标识编排共用
+	const launchRequest = useCallback(async (homePath) => {
+		const res = await fetch('/profile-launcher/launch', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ homePath }),
+		});
+		return { ok: res.ok, data: await res.json().catch(() => ({})), status: res.status };
+	}, []);
+
+	const stopRequest = useCallback(async (homePath) => {
+		const res = await fetch('/profile-launcher/stop', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ homePath }),
+		});
+		return { ok: res.ok, data: await res.json().catch(() => ({})), status: res.status };
+	}, []);
+
 	const handleLaunch = useCallback(
 		async (home) => {
 			setLaunchingHome(home.homePath);
 			setToast(null);
 			try {
-				const res = await fetch('/profile-launcher/launch', {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ homePath: home.homePath }),
-				});
-				const data = await res.json().catch(() => ({}));
-				if (!res.ok) {
-					setToast({ kind: 'error', text: data.error ?? `启动失败（HTTP ${res.status}）` });
+				const { ok, data } = await launchRequest(home.homePath);
+				if (!ok) {
+					setToast({ kind: 'error', text: data.error ?? `启动失败（HTTP ${data.status ?? ''}）` });
 				} else if (data.survived === false) {
 					setToast({ kind: 'error', text: `${home.displayName} 实例启动后很快退出，请检查该 profile 是否损坏` });
 				} else {
@@ -244,7 +286,93 @@ function LauncherPanel() {
 				setTimeout(() => refresh(), 3000);
 			}
 		},
-		[refresh]
+		[launchRequest, refresh]
+	);
+
+	// 新建自动注入编排（pl-CHG-005 AC3）：create 后自动
+	// 首启（宿主初始化）→ 轮询 initialized → 停止 → 注入标识 → 再启动。
+	// 任一步失败即中止并如实提示（profile 仍可用，标识可稍后卡片手动注入）。
+	const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+	const runBadgeBootstrap = useCallback(
+		async (displayName, homePath, inheritedHint = '') => {
+			const abort = (text) => {
+				setToast({ kind: 'error', text: `${text}（profile 已创建可用，标识可稍后在卡片「注入标识」补上）` });
+				return false;
+			};
+			setToast({ kind: 'ok', text: `${displayName} 已创建，正在首次启动完成宿主初始化…` });
+			setLaunchingHome(homePath);
+			let launch;
+			try {
+				launch = await launchRequest(homePath);
+			} finally {
+				setLaunchingHome(null);
+			}
+			if (!launch.ok) return abort(`首次启动失败：${launch.data.error ?? `HTTP ${launch.status}`}`);
+			if (launch.data.survived === false) return abort('首次启动后实例很快退出');
+			await refresh();
+
+			setToast({ kind: 'ok', text: `${displayName} 初始化中，等待宿主就绪…` });
+			let initialized = false;
+			for (let i = 0; i < 20; i += 1) {
+				await sleep(2000);
+				try {
+					const res = await fetch('/profile-launcher/profiles');
+					if (res.ok) {
+						const snapshot = await res.json();
+						const target = snapshot.homes?.find((h) => h.homePath === homePath);
+						if (target?.initialized === true) {
+							initialized = true;
+							break;
+						}
+					}
+				} catch {
+					// 轮询失败继续重试
+				}
+			}
+			if (!initialized) return abort('等待宿主初始化超时');
+
+			setToast({ kind: 'ok', text: `${displayName} 初始化完成，正在停止实例以注入标识…` });
+			setStoppingHome(homePath);
+			let stop;
+			try {
+				stop = await stopRequest(homePath);
+			} finally {
+				setStoppingHome(null);
+			}
+			if (!stop.ok) return abort(`停止实例失败：${stop.data.error ?? `HTTP ${stop.status}`}`);
+
+			setToast({ kind: 'ok', text: `${displayName} 正在注入实例标识…` });
+			setBadgingHome(homePath);
+			let inject;
+			try {
+				inject = await fetch('/profile-launcher/inject-badge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ homePath }),
+				}).then(async (res) => ({ ok: res.ok, data: await res.json().catch(() => ({})), status: res.status }));
+			} finally {
+				setBadgingHome(null);
+			}
+			if (!inject.ok) return abort(`注入标识失败：${inject.data.error ?? `HTTP ${inject.status}`}`);
+
+			setToast({ kind: 'ok', text: `${displayName} 标识已注入，正在重新启动…` });
+			setLaunchingHome(homePath);
+			let relaunch;
+			try {
+				relaunch = await launchRequest(homePath);
+			} finally {
+				setLaunchingHome(null);
+			}
+			if (!relaunch.ok || relaunch.data.survived === false) {
+				setToast({ kind: 'ok', text: `${displayName} 标识注入完成；实例重启未就绪，可稍后手动启动${inheritedHint}` });
+			} else {
+				setToast({ kind: 'ok', text: `${displayName} 已就绪：窗口右下角浮标显示本 profile 名称${inheritedHint}` });
+			}
+			await refresh();
+			setTimeout(() => refresh(), 3000);
+			return true;
+		},
+		[launchRequest, stopRequest, refresh]
 	);
 
 	const closeCreateForm = useCallback(() => {
@@ -273,22 +401,79 @@ function LauncherPanel() {
 				setNameError(data.error ?? `新建失败（HTTP ${res.status}）`);
 			} else {
 				closeCreateForm();
-				// P1 引导：有继承时说明导入机制与首启引导页预期（账号引导与继承无关，
-				// 2026-11-17 实证：volatile 会话态 + signed-out 恒弹一次，关闭即过）；
-				// 无继承走 pl-CHG-002 原文案
-				setToast({
-					kind: 'ok',
-					text:
-						data.inherited?.length > 0
-							? `已创建并继承模型配置（${data.inherited.join('、')}），开箱即用。首次启动如出现「登录或添加 API Key」引导页，属官方一次性流程，关闭即可`
-							: `已创建 ${data.homePath}。首次启动时自动完成初始化；安装插件请在启动后的应用内「插件」页操作`,
-				});
-				await refresh();
+				// pl-CHG-005 AC3：新建即标识——create 成功后自动编排
+				// 首启初始化 → 停止 → 注入 → 再启动；编排内每步都有进度/失败提示。
+				// 有继承时保留 pl-CHG-003 引导文案（首启登录引导页为官方一次性流程，与继承无关）
+				const hint =
+					data.inherited?.length > 0
+						? '（已继承模型配置；首次启动如出现「登录或添加 API Key」引导页，属官方一次性流程，关闭即可）'
+						: '';
+				await runBadgeBootstrap(name, data.homePath, hint);
 			}
 		} catch (err) {
 			setToast({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
 		}
-	}, [newName, inheritFrom, closeCreateForm, refresh]);
+	}, [newName, inheritFrom, closeCreateForm, runBadgeBootstrap]);
+
+	// 既有 profile 手动注入/移除（pl-CHG-005 AC4/AC7）。运行中允许注入（宿主 boot 才装载），
+	// 完成后提示重启引导（生效须重启实例）。
+	const handleInjectBadge = useCallback(
+		async (home) => {
+			setBadgingHome(home.homePath);
+			setToast(null);
+			try {
+				const res = await fetch('/profile-launcher/inject-badge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ homePath: home.homePath }),
+				});
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					setToast({ kind: 'error', text: data.error ?? `注入失败（HTTP ${res.status}）` });
+				} else if (home.running === true) {
+					setToast({ kind: 'ok', text: `${home.displayName} 标识已注入，重启该实例后生效（卡片「停止」后再「启动」）` });
+				} else {
+					setToast({ kind: 'ok', text: `${home.displayName} 标识已注入，下次启动即生效` });
+				}
+			} catch (err) {
+				setToast({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
+			} finally {
+				setBadgingHome(null);
+				await refresh();
+			}
+		},
+		[refresh]
+	);
+
+	const handleRemoveBadge = useCallback(
+		async (home) => {
+			setBadgingHome(home.homePath);
+			setToast(null);
+			try {
+				const res = await fetch('/profile-launcher/remove-badge', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ homePath: home.homePath }),
+				});
+				const data = await res.json().catch(() => ({}));
+				if (!res.ok) {
+					setToast({ kind: 'error', text: data.error ?? `移除失败（HTTP ${res.status}）` });
+				} else if (data.removed === false) {
+					setToast({ kind: 'ok', text: data.message ?? '该 profile 未注入标识' });
+				} else if (home.running === true) {
+					setToast({ kind: 'ok', text: `${home.displayName} 标识已移除，重启该实例后恢复原状` });
+				} else {
+					setToast({ kind: 'ok', text: `${home.displayName} 标识已移除，下次启动即恢复原状` });
+				}
+			} catch (err) {
+				setToast({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
+			} finally {
+				setBadgingHome(null);
+				await refresh();
+			}
+		},
+		[refresh]
+	);
 
 	const handleStop = useCallback(
 		async (home) => {
@@ -444,9 +629,12 @@ function LauncherPanel() {
 							launching={launchingHome === home.homePath}
 							stopping={stoppingHome === home.homePath}
 							deleting={deletingHome === home.homePath}
+							badging={badgingHome === home.homePath}
 							onLaunch={handleLaunch}
 							onStop={handleStop}
 							onDelete={handleDeleteClick}
+							onInjectBadge={handleInjectBadge}
+							onRemoveBadge={handleRemoveBadge}
 						/>
 					))
 				) : (

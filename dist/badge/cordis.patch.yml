@@ -1,0 +1,4 @@
+# @supertiny99/dsh-profile-badge bundle patch
+- insert:
+    - id: profile-badge
+      name: '@supertiny99/dsh-profile-badge'

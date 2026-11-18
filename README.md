@@ -13,7 +13,8 @@ DSH（DeepSeek Harness）多 Profile 桌面版启动器与环境管理器。在�
 - **环境发现（两级）**：扫描 `~/.dsh*` 目录，区分完整 home（已初始化）与待初始化 home（新建空目录 / 历史不完整环境，首启时宿主自动补全），展示名称 / 路径 / 激活插件数 / 安装依赖数
 - **运行状态**：扫描宿主进程列表，精确识别每个 profile 是否有桌面版在跑（当前实例高亮标记）
 - **一键启动**：`spawn` detached 官方 app，不随本实例退出；启动后存活复查，秒退实例显式告警；待初始化 home 亦可直接启动（触发宿主首启初始化）
-- **新建**：名称校验（小写字母/数字/连字符）+ 重名拒绝，创建 `~/.dsh-<名称>` 纯空目录，零预置文件；**可选继承模型配置**——下拉任选一个已初始化 profile，字节级复制 `settings.yaml`（模型 provider 定义）/ `.credentials.yaml`（API key，保持 0600）/ `.env`（环境变量注入）三件套到新 home。宿主首启经官方导入机制（settings.yaml → Cordis 条目）自动生效，模型设置**开箱即用无需重配**
+- **新建**：名称校验（小写字母/数字/连字符）+ 重名拒绝，创建 `~/.dsh-<名称>` 纯空目录，零预置文件；**可选继承模型配置**——下拉任选一个已初始化 profile，字节级复制 `settings.yaml`（模型 provider 定义）/ `.credentials.yaml`（API key，保持 0600）/ `.env`（环境变量注入）三件套到新 home。宿主首启经官方导入机制（settings.yaml → Cordis 条目）自动生效，模型设置**开箱即用无需重配**。新建完成后自动编排「首启初始化 → 注入实例标识 → 重启」，一次到位
+- **实例标识（pl-CHG-005）**：每个 profile 可一键「注入标识」——内嵌 companion 插件（`@supertiny99/dsh-profile-badge`）被写入目标 profile 并自动安装，此后该 profile 实例 **UI 右下角常驻本 profile 名称浮标**（半透明胶囊、明暗主题自适应、不遮挡交互），多实例并存一眼可辨；调度中心/MISSION CONTROL 窗口缩略图同样可辨。可随时「移除标识」还原。**版本传播**：companion 以 `file:` 依赖拷贝进目标 profile（非链接），launcher 升级后对已注入 profile 重跑一次「注入标识」即完成 companion 更新（幂等）
 - **停止**：SIGTERM 目标实例主进程，整棵进程树随之退出（实证 1s 清零），5s 轮询 + SIGKILL 兜底；同机其他实例零影响
 - **删除**：官方 RiskConfirmation 勾选确认（降级内嵌二次确认），真删 home 整目录（含 desktop-user-data）；运行中 / 当前实例 / 状态未知一律拒绝
 - **防误操作**：操作入口不满足条件不渲染；homePath 白名单校验防任意路径注入
@@ -43,6 +44,7 @@ link:/path/to/this/profile-launcher        # 开发态
 - 仅 macOS（Windows/Linux 未实证，roadmap 候选）
 - 官方若变更单实例锁策略，双开钥匙可能失效（`engines.dsh <0.3.0` 限版本防护）
 - 各实例 Chromium 层数据不共享（隔离的代价与收益）
+- **实例标识的可见范围**：标识浮标渲染在实例 UI 内。macOS **Dock 图标与菜单栏应用名**多实例共用同一 App bundle，系统层无法区分；**窗口标题文字**也不可依赖——官方主窗口为 `hiddenInset` 样式（标题栏不显示文字），且活体实证页面 `document.title` 与窗口标题解耦（CDP 赋值持久生效但窗口 AX 标题不变）。跨窗口辨认以窗口内容中的浮标为准（调度中心缩略图可见）
 - **首启「登录或添加 API Key」引导页**：账号未登录（如走本地网关、无 DeepSeek 账号）时，每个新 profile 首启会弹一次该官方引导——与是否继承模型配置**无关**（宿主机制实证：显示条件是账号状态而非配置缺失，完成标记为会话态不落盘），关闭即可，继承的模型配置已开箱可用
 - 登录态（DeepSeek 账号会话）不随配置继承，需各 profile 首次手动登录（如有需要）
 
@@ -54,7 +56,7 @@ npm test        # 纯逻辑单测（node:assert/strict）
 npm run build   # esbuild 打包 + external 泄漏自检 + 产物结构 selfcheck
 ```
 
-Host 半（`src/index.js`）源码直发；Client 半构建到 `dist/client.js`。零 runtime 依赖，external 全部取自宿主冻结模块表。
+Host 半（`src/index.js`）源码直发；Client 半构建到 `dist/client.js`。零 runtime 依赖，external 全部取自宿主冻结模块表。内嵌 companion 包（`src/badge/` → `dist/badge/`，实例标识浮标）随构建自动组装，随 npm 包分发、由注入机制写入各 profile。
 
 ## License
 
