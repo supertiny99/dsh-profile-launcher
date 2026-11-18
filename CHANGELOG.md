@@ -2,6 +2,14 @@
 
 发布说明（GitHub Release 由此文件按版本节自动提取）。格式：`## vX.Y.Z（日期）`，节内为面向使用者的更新内容。
 
+## v0.4.2（2026-11-18）
+
+修复「注入标识」报 `The "path" argument must be of type string...` / 安装失败两连：
+
+- **内嵌包定位不再依赖 `import.meta.url`**：改为从本 profile 的 node_modules 推导（launcher 必装于此，四种安装 spec 落位一致），规避部分宿主加载形态下 `import.meta.url` 不可用的问题
+- **注入安装强制走 npm 官方源**：用户环境若配置了镜像（如 npmmirror），刚发布的新版本在镜像上必然滞后（`No matching version`）——注入涉及的新版本解析一律直连官方 registry
+- v0.4.1 修复的按钮事件问题不在本版重复：v0.4.0/v0.4.1 其他功能不受影响
+
 ## v0.4.1（2026-11-18）
 
 修复：「注入标识 / 移除标识」按钮点击报「未发现的 profile home：undefined」——卡片按钮事件未绑定 profile 对象导致请求缺少目标路径（v0.4.0 引入）。升级本版后注入/移除功能即可正常使用；v0.4.0 其余功能不受影响。

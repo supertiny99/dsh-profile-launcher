@@ -11,7 +11,6 @@ import { spawn, execFile } from 'node:child_process';
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
 	discoverProfileHomes,
@@ -32,21 +31,41 @@ const APP_FALLBACK = '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek
 /** app 二进制探测候选：宿主进程自省优先（随 app 更新/改名稳定），硬编码兜底 */
 const appPathCandidates = () => [process.argv[0], process.execPath, APP_FALLBACK];
 
+/** 注入安装强制走 npm 官方源：刚发布的新版本在用户环境镜像（npmmirror 等）上必然滞后 */
+const REGISTRY_OFFICIAL = 'https://registry.npmjs.org';
+
 /**
- * 内嵌 badge 包目录（pl-CHG-005）：<包根>/dist/badge。src/index.js 运行于包内，
- * 包根即 src 的上级；link 态 dev 与 npm 安装态布局一致。
+ * 内嵌 badge 包目录（pl-CHG-005）：<本 profile>/node_modules/@supertiny99/dsh-profile-launcher/dist/badge。
+ * 不用 import.meta.url 推导（v0.4.1 实证部分宿主加载形态下不可用，报 path undefined）——
+ * launcher 自身必装在本 profile 的 node_modules（npm/link/file/tgz 四种 spec 落位一致，
+ * symlink 由 fs 层透明跟随），注入操作只可能从 launcher 所在 profile 发起，推导恒成立。
  */
-const badgeDistDir = () => resolve(dirname(fileURLToPath(import.meta.url)), '../dist/badge');
+const badgeDistDir = () =>
+	join(
+		resolveCurrentProfileDir({
+			env: process.env,
+			argv: process.argv,
+			existsFn: existsSync,
+			homedir: fsIo.homedir,
+		}),
+		'node_modules',
+		'@supertiny99',
+		'dsh-profile-launcher',
+		'dist',
+		'badge'
+	);
 
 /**
  * pnpm install 执行器（pl-CHG-005；plugin-guardian pg-CHG-001~004 实证参数）：
  * runtime pnpm.mjs 优先（host argv 携带路径，锁 process.execPath 免环境漂移），
- * 兜底系统 pnpm；verify-deps-before-run 关闭防宿主内嵌校验卡死。
+ * 兜底系统 pnpm；verify-deps-before-run 关闭防宿主内嵌校验卡死；
+ * **强制官方 registry**（v0.4.1 实证：用户环境 ~/.npmrc 镜像（npmmirror）同步滞后，
+ * 刚发布的新版本在镜像上 No matching version——注入的新版本必须从官方源解析）。
  * @param {string} cwd 目标 profile 工作区目录
  * @returns {Promise<{ ok: boolean, log: string }>}
  */
 function pnpmInstall(cwd) {
-	const args = ['install', '--config.verify-deps-before-run=false'];
+	const args = ['install', '--config.verify-deps-before-run=false', `--registry=${REGISTRY_OFFICIAL}`];
 	const pnpmEntry = resolvePnpmEntry(process.argv, existsSync);
 	const useNodeScript = Boolean(pnpmEntry);
 	const cmd = useNodeScript ? process.execPath : 'pnpm';
