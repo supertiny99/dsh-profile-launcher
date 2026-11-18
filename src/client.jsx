@@ -187,7 +187,7 @@ function HomeCard({ home, launching, stopping, deleting, badging, onLaunch, onSt
 						className="pl-badge-btn"
 						disabled={badging}
 						title="注入实例标识浮标（窗口右下角显示 profile 名称，重启实例后生效）"
-						onClick={onInjectBadge}
+						onClick={() => onInjectBadge(home)}
 					>
 						{badging ? '注入中…' : '注入标识'}
 					</button>
@@ -198,7 +198,7 @@ function HomeCard({ home, launching, stopping, deleting, badging, onLaunch, onSt
 						className="pl-badge-btn"
 						disabled={badging}
 						title="移除实例标识浮标（重启实例后恢复原状）"
-						onClick={onRemoveBadge}
+						onClick={() => onRemoveBadge(home)}
 					>
 						{badging ? '移除中…' : '移除标识'}
 					</button>
